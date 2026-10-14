@@ -1,7 +1,4 @@
 [project]
 name = "trustcheck-pk-backend"
 version = "1.0.0"
-requires-python = ">=3.10"
-
-[tool.vercel]
-entrypoint = "main:app"
+requires-python = ">=3.12"

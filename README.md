@@ -14,23 +14,21 @@ trustcheck-pk/
 
 ## Deploy on Vercel (complete app)
 
+This project deploys as **one FastAPI app** on Vercel. The build step compiles the React frontend, and FastAPI serves both the UI and `/api/*`.
+
 1. Push this repo to GitHub.
 2. In [vercel.com](https://vercel.com) → **Add New Project** → import the repo.
-3. Vercel reads `vercel.json` and deploys both services.
+3. Framework should be **FastAPI** (see `vercel.json` / `pyproject.toml`).
 4. Add Environment Variables (Production + Preview):
 
 | Name | Value |
 |---|---|
 | `SUPABASE_URL` | your Supabase project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | your publishable key |
-| `CORS_ORIGINS` | `https://YOUR_APP.vercel.app` |
 
 5. Deploy. Open the live URL — UI is at `/`, API at `/api/...`.
 
-### Routing
-
-- `/api/*` → Python FastAPI (`backend/main.py`)
-- everything else → React frontend (`frontend/`)
+6. In Vercel → Settings → Deployment Protection, turn **off** “Vercel Authentication” for Production so the public demo/API works.
 
 ## Supabase setup (once)
 

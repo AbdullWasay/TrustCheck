@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "npm --prefix frontend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
-    "dev:backend": "backend/.venv/bin/uvicorn main:app --app-dir backend --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": "backend/.venv/bin/uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000",
     "build": "npm --prefix frontend run build",
     "install:all": "npm --prefix frontend install"
   }

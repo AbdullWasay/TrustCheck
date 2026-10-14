@@ -13,31 +13,28 @@ from fastapi import APIRouter, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from supabase_rest import SupabaseRestError, get_rest_client
-from trust_engine import assess_seller
+try:
+    from .supabase_rest import SupabaseRestError, get_rest_client
+    from .trust_engine import assess_seller
+except ImportError:  # local: uvicorn main:app --app-dir backend
+    from supabase_rest import SupabaseRestError, get_rest_client
+    from trust_engine import assess_seller
 
 _BACKEND_DIR = Path(__file__).resolve().parent
+_ROOT_DIR = _BACKEND_DIR.parent
 load_dotenv(_BACKEND_DIR / ".env")
-load_dotenv(_BACKEND_DIR.parent / ".env")
+load_dotenv(_ROOT_DIR / ".env")
 
 PK_PHONE_PATTERN = re.compile(r"^(?:\+92|0092|0)?3\d{2}[-\s]?\d{7}$")
-
-cors_origins = [
-    origin.strip()
-    for origin in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173",
-    ).split(",")
-    if origin.strip()
-]
 
 app = FastAPI(title="TrustCheck PK API", version="1.0.0")
 router = APIRouter()
 
+# Keep CORS simple for same-origin Vercel + local Vite proxy
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if "*" in cors_origins else cors_origins + ["*"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -396,9 +393,14 @@ def get_check(
     return {"check": serialize_check(rows[0])}
 
 
-# Mount under /api (public URL) and also at root (in case Vercel strips /api)
+# Mount under /api (public URL) and also at root (in case platform strips /api)
 app.include_router(router, prefix="/api")
 app.include_router(router)
+
+# On Vercel, serve the built React app from the same FastAPI service
+_frontend_dist = _ROOT_DIR / "frontend" / "dist"
+if hasattr(app, "frontend") and _frontend_dist.exists():
+    app.frontend("/", directory=str(_frontend_dist))
 
 
 if __name__ == "__main__":
