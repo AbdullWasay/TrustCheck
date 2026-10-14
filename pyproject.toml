@@ -14,4 +14,9 @@ dependencies = [
 entrypoint = "backend.main:app"
 
 [tool.vercel.scripts]
-build = "npm --prefix frontend install && npm --prefix frontend run build"
+# Build React, then copy into ./dist for app.frontend("/", directory="dist")
+build = "npm --prefix frontend install && npm --prefix frontend run build && rm -rf dist && cp -R frontend/dist dist"
+
+[tool.vercel.fastapi.static]
+# CORS middleware is present; force CDN promotion of the frontend build
+cdn = true

@@ -397,10 +397,25 @@ def get_check(
 app.include_router(router, prefix="/api")
 app.include_router(router)
 
-# On Vercel, serve the built React app from the same FastAPI service
-_frontend_dist = _ROOT_DIR / "frontend" / "dist"
-if hasattr(app, "frontend") and _frontend_dist.exists():
-    app.frontend("/", directory=str(_frontend_dist))
+# Serve the Vite build on Vercel. Use a string path so Vercel can detect it at build time.
+# fallback="index.html" keeps the SPA working on reload/deep links.
+if hasattr(app, "frontend"):
+    app.frontend("/", directory="dist", fallback="index.html")
+else:
+    # Local/prod fallback when Vercel's frontend helper is unavailable
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    _dist = _ROOT_DIR / "dist"
+    if (_dist / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(_dist / "assets")), name="assets")
+
+    @app.get("/", include_in_schema=False)
+    def spa_root():
+        index = _dist / "index.html"
+        if index.exists():
+            return FileResponse(index)
+        return {"message": "Frontend not built. Run npm run build."}
 
 
 if __name__ == "__main__":
