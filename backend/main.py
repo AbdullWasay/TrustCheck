@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 
 try:
     from .supabase_rest import SupabaseRestError, get_rest_client
@@ -30,7 +30,6 @@ PK_PHONE_PATTERN = re.compile(r"^(?:\+92|0092|0)?3\d{2}[-\s]?\d{7}$")
 app = FastAPI(title="TrustCheck PK API", version="1.0.0")
 router = APIRouter()
 
-# Keep CORS simple for same-origin Vercel + local Vite proxy
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,49 +44,11 @@ class AuthRequest(BaseModel):
     password: str = Field(min_length=6)
     full_name: Optional[str] = None
 
-    @field_validator("full_name")
-    @classmethod
-    def validate_full_name(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        name = value.strip()
-        if not name:
-            return None
-        if len(name) < 2:
-            raise ValueError("Enter a valid name.")
-        return name
-
 
 class SellerStartRequest(BaseModel):
     website: str
     phone: str
     seller_type: str
-
-    @field_validator("website")
-    @classmethod
-    def validate_website(cls, value: str) -> str:
-        website = value.strip()
-        if not website:
-            raise ValueError("Website or social profile is required.")
-
-        candidate = (
-            website if re.match(r"^https?://", website, re.I) else f"https://{website}"
-        )
-        parsed = urlparse(candidate)
-        if parsed.scheme not in {"http", "https"} or "." not in (parsed.hostname or ""):
-            raise ValueError("Enter a valid website or profile URL.")
-        return candidate
-
-    @field_validator("phone")
-    @classmethod
-    def validate_phone(cls, value: str) -> str:
-        phone = value.trim()
-        compact = re.sub(r"[()\s]", "", phone)
-        if not PK_PHONE_PATTERN.match(compact):
-            raise ValueError(
-                "Enter a valid Pakistan mobile number (e.g. 0300-1234567)."
-            )
-        return phone
 
 
 class SellerDetailsRequest(BaseModel):
@@ -95,15 +56,45 @@ class SellerDetailsRequest(BaseModel):
     payment_method: str
     return_policy: str
 
-    @field_validator("seller_name")
-    @classmethod
-    def validate_seller_name(cls, value: str) -> str:
-        name = value.strip()
-        if len(name) < 2:
-            raise ValueError("Seller name looks too short.")
-        if len(name) > 80:
-            raise ValueError("Seller name is too long.")
-        return name
+
+def normalize_and_validate_website(value: str) -> str:
+    website = (value or "").strip()
+    if not website:
+        raise HTTPException(
+            status_code=400,
+            detail="Website or social profile is required.",
+        )
+
+    candidate = (
+        website if re.match(r"^https?://", website, re.I) else f"https://{website}"
+    )
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or "." not in (parsed.hostname or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a valid website or profile URL.",
+        )
+    return candidate
+
+
+def validate_phone_number(value: str) -> str:
+    phone = (value or "").strip()
+    compact = re.sub(r"[()\s]", "", phone)
+    if not PK_PHONE_PATTERN.match(compact):
+        raise HTTPException(
+            status_code=400,
+            detail="Enter a valid Pakistan mobile number (e.g. 0300-1234567).",
+        )
+    return phone
+
+
+def validate_seller_name_value(value: str) -> str:
+    name = (value or "").strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail="Seller name looks too short.")
+    if len(name) > 80:
+        raise HTTPException(status_code=400, detail="Seller name is too long.")
+    return name
 
 
 def hash_password(password: str) -> str:
@@ -118,7 +109,6 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    # New format used by this app on Vercel
     if password_hash.startswith("pbkdf2$"):
         try:
             _, salt, expected = password_hash.split("$", 2)
@@ -132,7 +122,6 @@ def verify_password(password: str, password_hash: str) -> bool:
         except ValueError:
             return False
 
-    # Legacy bcrypt hashes from earlier local builds (optional)
     if password_hash.startswith("$2"):
         try:
             import bcrypt  # type: ignore
@@ -203,6 +192,7 @@ def health() -> dict[str, str]:
 @router.post("/auth/register")
 def register(payload: AuthRequest) -> dict[str, Any]:
     email = payload.email.lower().strip()
+    full_name = (payload.full_name or "").strip() or email.split("@")[0]
     client = db()
 
     existing = client.select(
@@ -223,7 +213,7 @@ def register(payload: AuthRequest) -> dict[str, Any]:
             {
                 "email": email,
                 "password_hash": hash_password(payload.password),
-                "full_name": payload.full_name or email.split("@")[0],
+                "full_name": full_name,
             },
         )
     except SupabaseRestError as exc:
@@ -298,16 +288,18 @@ def start_check(
     x_user_id: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     user = get_user_or_401(x_user_id)
+    website = normalize_and_validate_website(payload.website)
+    phone = validate_phone_number(payload.phone)
+
     try:
         inserted = db().insert(
             "seller_checks",
             {
                 "user_id": user["id"],
-                "website": payload.website.strip(),
-                "phone": payload.phone.strip(),
-                "seller_type": payload.seller_type,
+                "website": website,
+                "phone": phone,
+                "seller_type": payload.seller_type.strip(),
                 "status": "draft",
-                "updated_at": now_iso(),
             },
         )
     except SupabaseRestError as exc:
@@ -326,6 +318,7 @@ def update_details(
     x_user_id: Optional[str] = Header(default=None),
 ) -> dict[str, Any]:
     user = get_user_or_401(x_user_id)
+    seller_name = validate_seller_name_value(payload.seller_name)
     client = db()
 
     existing = client.select(
@@ -343,7 +336,7 @@ def update_details(
             "website": current.get("website"),
             "phone": current.get("phone"),
             "seller_type": current.get("seller_type"),
-            "seller_name": payload.seller_name,
+            "seller_name": seller_name,
             "payment_method": payload.payment_method,
             "return_policy": payload.return_policy,
         }
@@ -353,7 +346,7 @@ def update_details(
         updated = client.update(
             "seller_checks",
             {
-                "seller_name": payload.seller_name.strip(),
+                "seller_name": seller_name,
                 "payment_method": payload.payment_method,
                 "return_policy": payload.return_policy,
                 "risk_level": assessment["risk_level"],
@@ -393,16 +386,12 @@ def get_check(
     return {"check": serialize_check(rows[0])}
 
 
-# Mount under /api (public URL) and also at root (in case platform strips /api)
 app.include_router(router, prefix="/api")
 app.include_router(router)
 
-# Serve the Vite build on Vercel. Use a string path so Vercel can detect it at build time.
-# fallback="index.html" keeps the SPA working on reload/deep links.
 if hasattr(app, "frontend"):
     app.frontend("/", directory="dist", fallback="index.html")
 else:
-    # Local/prod fallback when Vercel's frontend helper is unavailable
     from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 
