@@ -1,17 +1,21 @@
 import os
+import re
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from supabase import Client, create_client
 
 from trust_engine import assess_seller
+
+PK_PHONE_PATTERN = re.compile(r"^(?:\+92|0092|0)?3\d{2}[-\s]?\d{7}$")
 
 # Load backend/.env then repo-root .env (local + Vercel-compatible)
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -67,17 +71,64 @@ class AuthRequest(BaseModel):
     password: str = Field(min_length=6)
     full_name: Optional[str] = None
 
+    @field_validator("full_name")
+    @classmethod
+    def validate_full_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        name = value.strip()
+        if not name:
+            return None
+        if len(name) < 2:
+            raise ValueError("Enter a valid name.")
+        return name
+
 
 class SellerStartRequest(BaseModel):
     website: str
     phone: str
     seller_type: str
 
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, value: str) -> str:
+        website = value.strip()
+        if not website:
+            raise ValueError("Website or social profile is required.")
+
+        candidate = website if re.match(r"^https?://", website, re.I) else f"https://{website}"
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or "." not in (parsed.hostname or ""):
+            raise ValueError("Enter a valid website or profile URL.")
+        return candidate
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        phone = value.strip()
+        compact = re.sub(r"[()\s]", "", phone)
+        if not PK_PHONE_PATTERN.match(compact):
+            raise ValueError(
+                "Enter a valid Pakistan mobile number (e.g. 0300-1234567)."
+            )
+        return phone
+
 
 class SellerDetailsRequest(BaseModel):
     seller_name: str
     payment_method: str
     return_policy: str
+
+    @field_validator("seller_name")
+    @classmethod
+    def validate_seller_name(cls, value: str) -> str:
+        name = value.strip()
+        if len(name) < 2:
+            raise ValueError("Seller name looks too short.")
+        if len(name) > 80:
+            raise ValueError("Seller name is too long.")
+        return name
+
 
 
 def hash_password(password: str) -> str:

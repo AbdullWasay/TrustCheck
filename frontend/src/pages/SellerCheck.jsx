@@ -3,12 +3,18 @@ import CustomButton from "../components/CustomButton";
 import CustomInput from "../components/CustomInput";
 import FormSection from "../components/FormSection";
 import { api } from "../lib/api";
+import {
+  normalizeWebsite,
+  validatePhone,
+  validateWebsiteOrProfile,
+} from "../lib/validation";
 
 function SellerCheck({ user, onContinue, onLogout }) {
   const [website, setWebsite] = useState("");
   const [phone, setPhone] = useState("");
   const [sellerType, setSellerType] = useState("Instagram");
   const [history, setHistory] = useState([]);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -40,14 +46,26 @@ function SellerCheck({ user, onContinue, onLogout }) {
     };
   }, [user.id]);
 
+  const validateForm = () => {
+    const nextErrors = {
+      website: validateWebsiteOrProfile(website),
+      phone: validatePhone(phone),
+    };
+    setFieldErrors(nextErrors);
+    return !Object.values(nextErrors).some(Boolean);
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+
+    if (!validateForm()) return;
+
     setLoading(true);
 
     try {
       const data = await api.startCheck(user.id, {
-        website: website.trim(),
+        website: normalizeWebsite(website),
         phone: phone.trim(),
         seller_type: sellerType,
       });
@@ -75,7 +93,7 @@ function SellerCheck({ user, onContinue, onLogout }) {
           Enter the information you have about the seller.
         </p>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <FormSection
             title="Seller Information"
             description="Provide at least the seller website and phone number."
@@ -83,9 +101,13 @@ function SellerCheck({ user, onContinue, onLogout }) {
             <CustomInput
               label="Seller Website or Social Profile"
               value={website}
-              onChange={(e) => setWebsite(e.target.value)}
+              onChange={(e) => {
+                setWebsite(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, website: "" }));
+              }}
               placeholder="https://instagram.com/example"
               required
+              error={fieldErrors.website}
             />
 
             <div className="input-group">
@@ -106,9 +128,13 @@ function SellerCheck({ user, onContinue, onLogout }) {
               label="Phone Number"
               type="tel"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, phone: "" }));
+              }}
               placeholder="0300-1234567"
               required
+              error={fieldErrors.phone}
             />
 
             {error && <p className="input-error">{error}</p>}

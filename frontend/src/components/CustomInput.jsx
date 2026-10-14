@@ -8,7 +8,7 @@ function CustomInput({
   error = "",
 }) {
   return (
-    <div className="input-group">
+    <div className={`input-group${error ? " has-error" : ""}`}>
       <label>
         {label}
         {required && <span className="required"> *</span>}
@@ -20,6 +20,8 @@ function CustomInput({
         onChange={onChange}
         placeholder={placeholder}
         required={required}
+        aria-invalid={Boolean(error)}
+        className={error ? "input-invalid" : undefined}
       />
 
       {error && <p className="input-error">{error}</p>}

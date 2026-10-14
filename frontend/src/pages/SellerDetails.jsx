@@ -3,17 +3,30 @@ import CustomButton from "../components/CustomButton";
 import CustomInput from "../components/CustomInput";
 import FormSection from "../components/FormSection";
 import { api } from "../lib/api";
+import { validateSellerName } from "../lib/validation";
 
 function SellerDetails({ user, check, onContinue }) {
   const [sellerName, setSellerName] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Bank Transfer");
   const [returnPolicy, setReturnPolicy] = useState("No");
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const validateForm = () => {
+    const nextErrors = {
+      sellerName: validateSellerName(sellerName),
+    };
+    setFieldErrors(nextErrors);
+    return !Object.values(nextErrors).some(Boolean);
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+
+    if (!validateForm()) return;
+
     setLoading(true);
 
     try {
@@ -41,7 +54,7 @@ function SellerDetails({ user, check, onContinue }) {
           Tell us a little more about {check?.website || "the seller"}.
         </p>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <FormSection
             title="Business Information"
             description="These details help organise the trust assessment."
@@ -49,9 +62,13 @@ function SellerDetails({ user, check, onContinue }) {
             <CustomInput
               label="Seller or Business Name"
               value={sellerName}
-              onChange={(e) => setSellerName(e.target.value)}
+              onChange={(e) => {
+                setSellerName(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, sellerName: "" }));
+              }}
               placeholder="Example Fashion Store"
               required
+              error={fieldErrors.sellerName}
             />
 
             <div className="input-group">
